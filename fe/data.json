@@ -1,0 +1,27 @@
+[
+    {
+        "date": "2024-04-28",
+        "temperatureC": 15,
+        "summary": "Warm"
+    },
+    {
+        "date": "2024-04-29",
+        "temperatureC": -3,
+        "summary": "Chilly"
+    },
+    {
+        "date": "2024-04-30",
+        "temperatureC": 22,
+        "summary": "Mild"
+    },
+    {
+        "date": "2024-05-01",
+        "temperatureC": 5,
+        "summary": "Cool"
+    },
+    {
+        "date": "2024-05-02",
+        "temperatureC": 30,
+        "summary": "Hot"
+    }
+]
