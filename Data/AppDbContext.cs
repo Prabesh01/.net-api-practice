@@ -9,8 +9,8 @@ public class AppDbContext : DbContext
     }
 
     public DbSet<Category> Categories { get; set; }
-    // public DbSet<Supplier> Suppliers { get; set; }
-    // public DbSet<Product> Products { get; set; }
+    public DbSet<Supplier> Suppliers { get; set; }
+    public DbSet<Product> Products { get; set; }
     // public DbSet<Customer> Customers { get; set; }
     // public DbSet<Order> Orders { get; set; }
     // public DbSet<OrderItem> OrderItems { get; set; }
@@ -25,18 +25,18 @@ public class AppDbContext : DbContext
         // Configure relationships
 
         // Category - Product (1-M)
-        // modelBuilder.Entity<Category>()
-        //     .HasMany(c => c.Products)
-        //     .WithOne(p => p.Category)
-        //     .HasForeignKey(p => p.CategoryId)
-        //     .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Category>()
+            .HasMany(c => c.Products)
+            .WithOne(p => p.Category)
+            .HasForeignKey(p => p.CategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Supplier - Product (1-M)
-        // modelBuilder.Entity<Supplier>()
-        //     .HasMany(s => s.Products)
-        //     .WithOne(p => p.Supplier)
-        //     .HasForeignKey(p => p.SupplierId)
-        //     .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Supplier>()
+            .HasMany(s => s.Products)
+            .WithOne(p => p.Supplier)
+            .HasForeignKey(p => p.SupplierId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Customer - Order (1-M)
         // modelBuilder.Entity<Customer>()
