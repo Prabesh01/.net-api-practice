@@ -1,0 +1,106 @@
+#Data/AppDbContext.cs
+using Microsoft.EntityFrameworkCore;
+
+namespace ProductAPI;
+
+public class AppDbContext : DbContext
+{
+
+    public DbSet<Category> Categories { get; set; }
+    public DbSet<Supplier> Suppliers { get; set; }
+    public DbSet<Product> Products { get; set; }
+    public DbSet<Customer> Customers { get; set; }
+    public DbSet<Order> Orders { get; set; }
+    public DbSet<OrderItem> OrderItems { get; set; }
+
+    public AppDbContext(DbContextOptions<AppDbContext> options)
+        : base(options) { }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // Composite Key: OrderItem
+        modelBuilder.Entity<OrderItem>()
+            .HasKey(oi => new { oi.OrderId, oi.ProductId });
+
+        // Configure relationships
+
+        // Category - Product (1-M)
+        modelBuilder.Entity<Category>()
+            .HasMany(c => c.Products)
+            .WithOne(p => p.Category)
+            .HasForeignKey(p => p.CategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Supplier - Product (1-M)
+        modelBuilder.Entity<Supplier>()
+            .HasMany(s => s.Products)
+            .WithOne(p => p.Supplier)
+            .HasForeignKey(p => p.SupplierId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Customer - Order (1-M)
+        modelBuilder.Entity<Customer>()
+            .HasMany(c => c.Orders)
+            .WithOne(o => o.Customer)
+            .HasForeignKey(o => o.CustomerId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Order - OrderItem (1-M)
+        modelBuilder.Entity<Order>()
+            .HasMany(o => o.OrderItems)
+            .WithOne(oi => oi.Order)
+            .HasForeignKey(oi => oi.OrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Product - OrderItem (1-M)
+        modelBuilder.Entity<Product>()
+            .HasMany(p => p.OrderItems)
+            .WithOne(oi => oi.Product)
+            .HasForeignKey(oi => oi.ProductId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+
+1. dotnet tool install --global dotnet-ef
+2. dotnet ef migrations add InitialCreate
+What happens
+
+EF Core scans your models (Category, Supplier, Product, Customer, Order, OrderItem)
+
+Generates a migration file under Migrations/ folder
+
+Converts your C# model classes into SQL schema for PostgreSQL
+
+Includes:
+
+Tables
+
+Columns
+
+Relationships
+
+Composite keys (like OrderItem)
+
+Foreign keys and indexes
+
+3. dotnet ef database update
+verify
+database(aspnet)-> schema-> tables
+What happens:
+
+Creates all tables in ProductDB in PostgreSQL
+
+Applies relationships and constraints:
+
+Category → Product (1-to-M)
+
+Supplier → Product (1-to-M)
+
+Customer → Order (1-to-M)
+
+Order → OrderItem (1-to-M)
+
+Product → OrderItem (1-to-M)
+
+Sets up composite primary key on OrderItem (OrderId + ProductId) 
