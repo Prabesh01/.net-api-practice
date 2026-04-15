@@ -1,0 +1,401 @@
+ASP.NET Core Identity Integration
+
+Authentication & Authorization Implementation Guide
+
+Backend API Project  |  Version 1.0
+Overview
+
+This document describes the changes made to integrate ASP.NET Core Identity into the Backend API project. The implementation adds user registration (customer and admin roles), login functionality, role-based access control, and automatic database seeding of default roles.
+
+ 
+1. NuGet Packages Added
+
+Package
+	
+
+Install Command
+
+Microsoft.AspNetCore.Identity.EntityFrameworkCore
+	
+
+dotnet add package Microsoft.AspNetCore.Identity.EntityFrameworkCore --version 9.0.0
+
+Microsoft.AspNetCore.Identity
+	
+
+dotnet add package Microsoft.AspNetCore.Identity --version 9.0.0
+
+ 
+2. AppDbContext Changes
+
+The AppDbContext class was updated to inherit from IdentityDbContext<IdentityUser> instead of DbContext. This automatically adds all Identity-related tables (AspNetUsers, AspNetRoles, etc.) to the schema. Default roles are also seeded via the OnModelCreating method.
+Class Declaration
+
+public class AppDbContext : IdentityDbContext<IdentityUser>
+
+{
+
+    public AppDbContext(DbContextOptions<AppDbContext> options)
+
+        : base(options) { }
+
+ 
+
+    // ... your existing DbSets (Categories, Products, Tags, etc.)
+
+ 
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+
+    {
+
+        base.OnModelCreating(modelBuilder);
+
+ 
+
+        // Seed default roles
+
+        modelBuilder.Entity<IdentityRole>().HasData(
+
+            new IdentityRole { Id = "1", Name = "Admin",    NormalizedName = "ADMIN"    },
+
+            new IdentityRole { Id = "2", Name = "Customer", NormalizedName = "CUSTOMER" },
+
+            new IdentityRole { Id = "3", Name = "Vendor",   NormalizedName = "VENDOR"  }
+
+        );
+
+    }
+
+}
+
+ 
+3. Program.cs Changes
+3.1 Register Identity Services
+
+Add the following before builder.Build():
+
+builder.Services.AddIdentity<IdentityUser, IdentityRole>()
+
+    .AddEntityFrameworkStores<AppDbContext>()
+
+    .AddDefaultTokenProviders();
+
+ 
+
+builder.Services.Configure<IdentityOptions>(options =>
+
+{
+
+    options.Password.RequireDigit           = true;
+
+    options.Password.RequireLowercase       = true;
+
+    options.Password.RequireUppercase       = true;
+
+    options.Password.RequiredLength         = 6;
+
+    options.Password.RequireNonAlphanumeric = false;
+
+});
+3.2 Seed Roles at Startup
+
+Add the following after var app = builder.Build():
+
+using (var scope = app.Services.CreateScope())
+
+{
+
+    var roleManager = scope.ServiceProvider
+
+        .GetRequiredService<RoleManager<IdentityRole>>();
+
+ 
+
+    string[] roles = { "Admin", "Customer", "Vendor" };
+
+    foreach (var role in roles)
+
+    {
+
+        if (!await roleManager.RoleExistsAsync(role))
+
+            await roleManager.CreateAsync(new IdentityRole(role));
+
+    }
+
+}
+
+ 
+ 
+ 
+ 
+4. AuthController
+
+A new AuthController was created at Controllers/AuthController.cs. It exposes three endpoints for registration and login.
+4.1 DTOs
+
+public class RegisterDto
+
+{
+
+    public string Email    { get; set; }
+
+    public string Password { get; set; }
+
+}
+
+ 
+
+public class LoginDto
+
+{
+
+    public string Email    { get; set; }
+
+    public string Password { get; set; }
+
+}
+4.2 Controller
+
+[ApiController]
+
+[Route("api/auth")]
+
+public class AuthController : ControllerBase
+
+{
+
+    private readonly UserManager<IdentityUser>   _userManager;
+
+    private readonly SignInManager<IdentityUser> _signInManager;
+
+ 
+
+    public AuthController(
+
+        UserManager<IdentityUser>   userManager,
+
+        SignInManager<IdentityUser> signInManager)
+
+    {
+
+        _userManager   = userManager;
+
+        _signInManager = signInManager;
+
+    }
+
+ 
+
+    // POST api/auth/register-customer
+
+    [HttpPost("register-customer")]
+
+    public async Task<IActionResult> RegisterCustomer([FromBody] RegisterDto model)
+
+    {
+
+        var user   = new IdentityUser { UserName = model.Email, Email = model.Email };
+
+        var result = await _userManager.CreateAsync(user, model.Password);
+
+        if (result.Succeeded)
+
+        {
+
+            await _userManager.AddToRoleAsync(user, "Customer");
+
+            return Ok("Customer registered successfully.");
+
+        }
+
+        return BadRequest(result.Errors);
+
+    }
+
+ 
+
+    // POST api/auth/register-admin
+
+    [HttpPost("register-admin")]
+
+    public async Task<IActionResult> RegisterAdmin([FromBody] RegisterDto model)
+
+    {
+
+        var user   = new IdentityUser { UserName = model.Email, Email = model.Email };
+
+        var result = await _userManager.CreateAsync(user, model.Password);
+
+        if (result.Succeeded)
+
+        {
+
+            await _userManager.AddToRoleAsync(user, "Admin");
+
+            return Ok("Admin registered successfully.");
+
+        }
+
+        return BadRequest(result.Errors);
+
+    }
+
+ 
+
+    // POST api/auth/login
+
+    [HttpPost("login")]
+
+    public async Task<IActionResult> Login([FromBody] LoginDto model)
+
+    {
+
+        var result = await _signInManager.PasswordSignInAsync(
+
+            model.Email, model.Password, isPersistent: false, lockoutOnFailure: false);
+
+        if (result.Succeeded) return Ok("Login successful.");
+
+        return Unauthorized("Invalid login attempt.");
+
+    }
+
+}
+
+ 
+5. API Endpoint Reference
+
+Method
+	
+
+Endpoint
+	
+
+Role Assigned
+	
+
+Description
+
+POST
+	
+
+/api/auth/register-customer
+	
+
+Customer
+	
+
+Registers a new customer user
+
+POST
+	
+
+/api/auth/register-admin
+	
+
+Admin
+	
+
+Registers a new admin user
+
+POST
+	
+
+/api/auth/login
+	
+
+—
+	
+
+Authenticates an existing user
+
+ 
+6. Database Migration
+6.1 Add Identity Migration
+
+dotnet ef migrations add AddIdentitySchema
+
+dotnet ef database update
+6.2 If Tables Already Exist (Migration History Fix)
+
+If you encounter the error '42P07: relation already exists', the migration history table is out of sync. Manually register the previous migration as applied:
+
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+
+VALUES ('20260325033839_InitialCreate', '9.0.0');
+
+ 
+
+-- Then re-run:
+
+dotnet ef database update
+
+ 
+7. Identity Tables Added to Database
+
+Table Name
+	
+
+Purpose
+
+AspNetUsers
+	
+
+Stores user accounts (email, password hash, etc.)
+
+AspNetRoles
+	
+
+Stores role definitions (Admin, Customer, Vendor)
+
+AspNetUserRoles
+	
+
+Maps users to their assigned roles
+
+AspNetUserClaims
+	
+
+Stores additional user claims
+
+AspNetUserLogins
+	
+
+Tracks external login providers
+
+AspNetUserTokens
+	
+
+Stores user tokens (reset, 2FA, etc.)
+
+AspNetRoleClaims
+	
+
+Stores claims associated with roles
+
+ 
+8. Notes & Next Steps
+Current Limitations
+
+•       Login returns a plain 200 OK — no JWT token is issued yet.
+
+•       Endpoints are currently unprotected — no [Authorize] attribute applied.
+
+•       No refresh token or session management implemented.
+Recommended Next Steps
+
+•       Add JWT Bearer authentication and return a signed token on login.
+
+•       Apply [Authorize(Roles = "Admin")] to protected endpoints.
+
+•       Add a /api/auth/logout endpoint that clears the session/token.
+
+•       Move RegisterDto and LoginDto into a dedicated Models/Dtos/ folder.
+
+•       Add input validation attributes (e.g. [Required], [EmailAddress]) to DTOs.
+
+•       Consider moving role seeding to a dedicated DataSeeder service class.
+
+ 

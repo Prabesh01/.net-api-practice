@@ -1,0 +1,16 @@
+Task 1: Get Current Logged-in User
+Create endpoint: GET /api/auth/me
+Fetch current user using UserManager
+Return user details (Email, Username)
+Protect with [Authorize]
+
+Task 2: Logout User
+Create endpoint: POST /api/auth/logout
+Use SignInManager.SignOutAsync()
+Return success message
+
+Task 3: Change Password
+Create endpoint: POST /api/auth/change-password
+Accept CurrentPassword and NewPassword
+Use ChangePasswordAsync()
+Require authenticated user [Authorize]
