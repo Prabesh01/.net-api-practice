@@ -1,0 +1,656 @@
+ 
+
+ JWT Authentication
+
+
+
+    What is JWT and Why Use It
+
+JWT (JSON Web Token) is an open standard for securely transmitting information between parties as a compact, URL-safe JSON object. It is digitally signed using a secret key.
+
+ 
+What JWT Does
+
+•       Carries user identity and claims such as user ID, email, and role
+
+•       Is sent by the client in the Authorization header on every request
+
+•       Allows the server to verify identity without maintaining session state
+
+ 
+Why JWT is Used in This Project
+
+•       Stateless authentication — server does not store login sessions per user
+
+•       Works seamlessly for APIs and frontend-backend separation
+
+•       Fast and scalable for distributed systems
+
+ 
+2. Important Terms
+
+ 
+
+Issuer (iss)
+	
+
+Who creates and signs the token. In this project: your backend API.
+
+ 
+
+Audience (aud)
+	
+
+Who should consume the token. In this project: your API client app.
+
+ 
+
+Secret Key
+	
+
+Used to sign token so it cannot be tampered. Must be at least 32 characters long.
+
+ 
+
+Expiry
+	
+
+Token lifetime. Limits risk if a token is leaked or stolen.
+
+ 
+
+3. Step-by-Step Implementation
+Step 1 — Install JWT Package
+
+File: WeatherAPI.csproj
+
+Add the JwtBearer NuGet package reference to enable JWT authentication middleware support in ASP.NET Core.
+
+dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer --version 9.0.4
+
+ 
+Step 2 — Add JWT Settings in appsettings.json
+
+File: appsettings.json
+
+Add a Jwt configuration section with Issuer, Audience, Secret, and ExpiryHours. This keeps token rules configurable and supports environment-based settings.
+
+"Jwt": {
+
+  "Issuer": "WeatherApi",
+
+  "Audience": "WeatherApiClient",
+
+  "Secret": "ReplaceThisWithAtLeast32CharactersLongSecretKey",
+
+  "ExpiryHours": 12
+
+}
+
+ 
+Step 3 — Create JwtOptions Model
+
+File: Models/JwtOptions.cs
+
+Create a strongly-typed options class with Data Annotations validation. This prevents invalid JWT configuration at startup and makes config access clean and type-safe.
+
+using System.ComponentModel.DataAnnotations;
+
+ 
+
+public class JwtOptions
+
+{
+
+	public const string SectionName = "Jwt";
+
+ 
+
+	[Required]
+
+	public string Issuer { get; init; } = string.Empty;
+
+ 
+
+	[Required]
+
+	public string Audience { get; init; } = string.Empty;
+
+ 
+
+	[Required]
+
+	[MinLength(32)]
+
+	public string Secret { get; init; } = string.Empty;
+
+ 
+
+	[Range(1, 720)]
+
+	public int ExpiryHours { get; init; } = 12;
+
+}
+
+ 
+Step 4 — Configure JWT Authentication in Program.cs
+
+File: Program.cs
+
+Add the required using directives, bind JwtOptions, and configure AddAuthentication with AddJwtBearer. This validates every incoming token by issuer, audience, signature, and expiry — rejecting forged and expired tokens.
+
+using System.Text;
+
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+
+using Microsoft.IdentityModel.Tokens;
+
+ 
+
+var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
+
+builder.Services.AddOptions<JwtOptions>()
+
+	.Bind(jwtSection)
+
+    .ValidateDataAnnotations()
+
+	.ValidateOnStart();
+
+ 
+
+var jwtOptions = jwtSection.Get<JwtOptions>()
+
+	?? throw new InvalidOperationException("JWT configuration is missing.");
+
+ 
+
+var signingKey = new SymmetricSecurityKey(
+
+    Encoding.UTF8.GetBytes(jwtOptions.Secret));
+
+ 
+
+builder.Services.AddAuthentication(options =>
+
+{
+
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+
+    options.DefaultChallengeScheme  = JwtBearerDefaults.AuthenticationScheme;
+
+    options.DefaultScheme       	= JwtBearerDefaults.AuthenticationScheme;
+
+})
+
+.AddJwtBearer(options =>
+
+{
+
+    options.TokenValidationParameters = new TokenValidationParameters
+
+	{
+
+        ValidateIssuer       	= true,
+
+        ValidateAudience     	= true,
+
+        ValidateLifetime     	= true,
+
+        ValidateIssuerSigningKey = true,
+
+    	ValidIssuer          	= jwtOptions.Issuer,
+
+    	ValidAudience        	= jwtOptions.Audience,
+
+        IssuerSigningKey     	= signingKey,
+
+    	ClockSkew            	= TimeSpan.Zero
+
+	};
+
+});
+
+ 
+
+builder.Services.AddAuthorization();
+
+ 
+Step 5 — Correct Middleware Order
+
+File: Program.cs
+
+Authentication middleware must run before authorization. The user identity must be established before authorization checks can run.
+
+app.UseAuthentication();
+
+app.UseAuthorization();
+
+ 
+Step 6 — Registration Endpoints
+
+File: Controllers/AuthController.cs
+
+Add separate register endpoints for each role. All routes through one shared private method to avoid code duplication and keep role onboarding consistent.
+
+[HttpPost("register-customer")]
+
+public async Task<IActionResult> RegisterCustomer([FromBody] RegisterDto model)
+
+	=> await RegisterByRole(model, "Customer");
+
+ 
+
+[HttpPost("register-admin")]
+
+public async Task<IActionResult> RegisterAdmin([FromBody] RegisterDto model)
+
+	=> await RegisterByRole(model, "Admin");
+
+ 
+
+[HttpPost("register-vendor")]
+
+public async Task<IActionResult> RegisterVendor([FromBody] RegisterDto model)
+
+	=> await RegisterByRole(model, "Vendor");
+
+ 
+
+private async Task<IActionResult> RegisterByRole(RegisterDto model, string role)
+
+{
+
+	var existingUser = await _userManager.FindByEmailAsync(model.Email);
+
+	if (existingUser != null)
+
+    	return Conflict(new { message = "User with this email already exists." });
+
+ 
+
+	var user = new IdentityUser { UserName = model.Email, Email = model.Email };
+
+	var createResult = await _userManager.CreateAsync(user, model.Password);
+
+	if (!createResult.Succeeded)
+
+    	return BadRequest(new {
+
+        	message = "Registration failed.",
+
+        	errors  = createResult.Errors.Select(e => e.Description)
+
+    	});
+
+ 
+
+	var roleResult = await _userManager.AddToRoleAsync(user, role);
+
+	if (!roleResult.Succeeded) {
+
+    	await _userManager.DeleteAsync(user);
+
+    	return BadRequest(new {
+
+        	message = "Role assignment failed.",
+
+        	errors  = roleResult.Errors.Select(e => e.Description)
+
+    	});
+
+	}
+
+ 
+
+	return Ok(new {
+
+    	message = $"{role} registered successfully.",
+
+    	userId  = user.Id,
+
+    	email   = user.Email,
+
+    	role
+
+	});
+
+}
+
+ 
+Step 7 — DTO Validation Rules
+
+Files: DTOs/RegisterDto.cs and DTOs/LoginDto.cs
+
+Add Data Annotation validation to DTOs to reject invalid request data before business logic runs.
+RegisterDto.cs
+
+using System.ComponentModel.DataAnnotations;
+
+ 
+
+public class RegisterDto
+
+{
+
+	[Required, EmailAddress]
+
+	public string Email { get; set; } = string.Empty;
+
+ 
+
+	[Required, MinLength(6)]
+
+	public string Password { get; set; } = string.Empty;
+
+ 
+
+	[Required, Compare(nameof(Password))]
+
+	public string ConfirmPassword { get; set; } = string.Empty;
+
+}
+
+ 
+LoginDto.cs
+
+using System.ComponentModel.DataAnnotations;
+
+ 
+
+public class LoginDto
+
+{
+
+	[Required, EmailAddress]
+
+	public string Email { get; set; } = string.Empty;
+
+ 
+
+	[Required]
+
+	public string Password { get; set; } = string.Empty;
+
+}
+
+ 
+
+Step 8 — Generate JWT Token on Login
+
+File: Controllers/AuthController.cs
+
+Validate the model, find the user, check the password, load roles, then generate and return the signed JWT token.
+
+[HttpPost("login")]
+
+public async Task<IActionResult> Login([FromBody] LoginDto model)
+
+{
+
+	if (!ModelState.IsValid)
+
+    	return ValidationProblem(ModelState);
+
+ 
+
+	var user = await _userManager.FindByEmailAsync(model.Email);
+
+	if (user == null)
+
+    	return Unauthorized("Invalid login attempt.");
+
+ 
+
+	var result = await _signInManager.CheckPasswordSignInAsync(
+
+    	user, model.Password, lockoutOnFailure: true);
+
+	if (!result.Succeeded)
+
+    	return Unauthorized("Invalid login attempt.");
+
+ 
+
+	var roles     	= await _userManager.GetRolesAsync(user);
+
+	var expiryDateUtc = DateTime.UtcNow.AddHours(_jwtOptions.ExpiryHours);
+
+	var token     	= GenerateJwtToken(user, roles, expiryDateUtc);
+
+ 
+
+	return Ok(new {
+
+    	token,
+
+    	tokenType	= "Bearer",
+
+    	expiresAtUtc = expiryDateUtc,
+
+    	user = new { id = user.Id, email = user.Email, roles }
+
+	});
+
+}
+
+ 
+
+private string GenerateJwtToken(
+
+	IdentityUser user, IEnumerable<string> roles, DateTime expiryDateUtc)
+
+{
+
+	var claims = new List<Claim>
+
+	{
+
+        new(JwtRegisteredClaimNames.Sub,   user.Id),
+
+        new(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
+
+        new(ClaimTypes.Email,              user.Email ?? string.Empty),
+
+        new(JwtRegisteredClaimNames.Jti,   Guid.NewGuid().ToString()),
+
+        new(ClaimTypes.NameIdentifier,     user.Id),
+
+        new(ClaimTypes.Name,               user.UserName ?? user.Email ?? user.Id)
+
+	};
+
+	foreach (var role in roles)
+
+    	claims.Add(new Claim(ClaimTypes.Role, role));
+
+ 
+
+	var key     	= new SymmetricSecurityKey(
+
+                          Encoding.UTF8.GetBytes(_jwtOptions.Secret));
+
+	var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+ 
+
+	var token = new JwtSecurityToken(
+
+    	issuer:        	_jwtOptions.Issuer,
+
+    	audience:      	_jwtOptions.Audience,
+
+    	claims:        	claims,
+
+    	expires:       	expiryDateUtc,
+
+        signingCredentials: credentials);
+
+ 
+
+	return new JwtSecurityTokenHandler().WriteToken(token);
+
+}
+
+ 
+Step 9 — Protected Test Endpoint
+
+File: Controllers/AuthController.cs
+
+Add a [Authorize]-decorated endpoint to quickly verify whether token authentication is working end-to-end.
+
+[Authorize]
+
+[HttpGet("me")]
+
+public IActionResult Me()
+
+{
+
+	if (User.Identity?.IsAuthenticated != true)
+
+    	return Unauthorized();
+
+ 
+
+	var roles = User.Claims
+
+    	.Where(c => c.Type == ClaimTypes.Role)
+
+    	.Select(c => c.Value)
+
+    	.ToList();
+
+ 
+
+	return Ok(new {
+
+    	userId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+
+    	email  = User.FindFirstValue(ClaimTypes.Email),
+
+    	roles
+
+	});
+
+}
+
+ 
+Step 10 — Build and Verify
+
+Run the following command at the project root to ensure all changes compile and integrate correctly:
+
+dotnet build
+
+ 
+
+4. Endpoints Reference
+
+ 
+
+Method
+	
+
+Endpoint
+	
+
+Description
+
+POST
+	
+
+/api/auth/register-customer
+	
+
+Register a new Customer user
+
+POST
+	
+
+/api/auth/register-admin
+	
+
+Register a new Admin user
+
+POST
+	
+
+/api/auth/register-vendor
+	
+
+Register a new Vendor user
+
+POST
+	
+
+/api/auth/login
+	
+
+Authenticate and receive JWT token
+
+GET
+	
+
+/api/auth/me
+	
+
+Get current user info (Protected)
+
+ 
+5. Request and Response Examples
+Registration Request Body
+
+{
+
+    "email":           "student@example.com",
+
+    "password":        "Pass@123",
+
+    "confirmPassword": "Pass@123"
+
+}
+
+ 
+Login Request Body
+
+{
+
+    "email":    "student@example.com",
+
+	"password": "Pass@123"
+
+}
+
+ 
+Login Success Response
+
+A successful login returns the following fields:
+
+•       token — the signed JWT string
+
+•       tokenType — always "Bearer"
+
+•       expiresAtUtc — UTC timestamp when the token expires
+
+•       user — object containing id, email, and roles array
+
+ 
+6. How the Client Uses the Token
+
+The client stores the received token and attaches it to every subsequent request for protected endpoints via the Authorization header:
+
+Authorization: Bearer <token>
+
+ 
+Token Validation Outcomes
+
+•       If token is valid → API allows access to [Authorize] endpoints
+
+•       If token is invalid or expired → API returns 401 Unauthorized
+
+ 
+
+ 
+
+ 
+
