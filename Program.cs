@@ -2,13 +2,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 
 namespace WeatherAPI;
 
-public class Program
-{
-    public static void Main(string[] args)
-    {
         var builder = WebApplication.CreateBuilder(args);
 
         // Add services to the container.
@@ -31,21 +28,33 @@ public class Program
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddIdentity<IdentityUser, IdentityRole>()
+    .AddEntityFrameworkStores<AppDbContext>()
+    .AddDefaultTokenProviders();
+
+builder.Services.Configure<IdentityOptions>(options =>
+{
+    options.Password.RequireDigit           = true;
+    options.Password.RequireLowercase       = true;
+    options.Password.RequireUppercase       = true;
+    options.Password.RequiredLength         = 6;
+    options.Password.RequireNonAlphanumeric = false;
+});
 
         var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.CanConnect();
-    if (db.Database.CanConnect())
+    var roleManager = scope.ServiceProvider
+        .GetRequiredService<RoleManager<IdentityRole>>();
+
+    string[] roles = { "Admin", "Customer", "Vendor" };
+
+    foreach (var role in roles)
     {
-        Console.WriteLine("Database connected successfully!");
-    }
-    else
-    {
-        Console.WriteLine(" Database connection failed!");
-    }
+        if (!await roleManager.RoleExistsAsync(role))
+            await roleManager.CreateAsync(new IdentityRole(role));
+    }    
 }
 
 
@@ -64,5 +73,3 @@ using (var scope = app.Services.CreateScope())
         app.MapControllers();
 
         app.Run();
-    }
-}

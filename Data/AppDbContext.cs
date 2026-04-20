@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 
-public class AppDbContext : DbContext
+public class AppDbContext : IdentityDbContext<IdentityUser>
 {
     //Add constructor to accept DbContextOptions 
     //This allows configuration to be passed in from Program.cs when registering the DbContext 
@@ -23,6 +25,12 @@ public class AppDbContext : DbContext
         //     .HasKey(oi => new { oi.OrderId, oi.ProductId });
 
         // Configure relationships
+
+        modelBuilder.Entity<IdentityRole>().HasData(
+            new IdentityRole { Id = "1", Name = "Admin",    NormalizedName = "ADMIN"    },
+            new IdentityRole { Id = "2", Name = "Customer", NormalizedName = "CUSTOMER" },
+            new IdentityRole { Id = "3", Name = "Vendor",   NormalizedName = "VENDOR"  }
+        );
 
         // Category - Product (1-M)
         modelBuilder.Entity<Category>()
