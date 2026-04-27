@@ -82,6 +82,8 @@ var jwtOptions = jwtSection.Get<JwtOptions>()
 var signingKey = new SymmetricSecurityKey(
     Encoding.UTF8.GetBytes(jwtOptions.Secret));
 
+builder.Services.AddMemoryCache();
+
         var app = builder.Build();
 
 
