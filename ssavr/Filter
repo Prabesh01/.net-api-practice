@@ -1,0 +1,62 @@
+public class ProductFilterDto
+{
+    public string? Name { get; set; }
+    public string? SKU { get; set; }
+    public decimal? MinPrice { get; set; }
+    public decimal? MaxPrice { get; set; }
+    public int? CategoryId { get; set; }
+}[HttpGet
+
+[HttpGet]
+
+public async Task<IActionResult> GetAll([FromQuery] ProductFilterDto filter)
+
+{
+
+   var query = _context.Products.AsQueryable();
+
+   if (!string.IsNullOrEmpty(filter.Name))
+
+       query = query.Where(p => p.Name.ToLower()
+
+                    .Contains(filter.Name.ToLower()));
+
+   if (!string.IsNullOrEmpty(filter.SKU))
+
+       query = query.Where(p => p.SKU.ToLower() == filter.SKU.ToLower());
+
+   if (filter.MinPrice.HasValue)
+
+       query = query.Where(p => p.Price >= filter.MinPrice.Value);
+
+   if (filter.MaxPrice.HasValue)
+
+       query = query.Where(p => p.Price <= filter.MaxPrice.Value);
+
+   if (filter.CategoryId.HasValue)
+
+       query = query.Where(p => p.CategoryId == filter.CategoryId.Value);
+
+   var results = await query.ToListAsync();
+
+   return Ok(results);
+
+}
+
+
+..........................Caching ...................................
+Program.cs -> 
+
+builder.Services.AddMemoryCache();
+
+
+Helper -> CacheKeys.cs
+
+public static class CacheKeys
+{
+    public const string Products_All = "products_all";
+
+    public static string Product_ById(int id)
+        => $"product_{id}";
+}
+
