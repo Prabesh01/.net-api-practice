@@ -1,0 +1,98 @@
+
+
+public class Product
+{
+   public int Id { get; set; }
+   public string Name { get; set; }
+   public string SKU { get; set; }
+   public decimal Price { get; set; }
+   public int StockQty { get; set; }
+
+   // Many Products belong to one Category (M-to-1)
+   public int CategoryId { get; set; }
+   public Category Category { get; set; }
+
+   // Many Products belong to one Supplier (M-to-1)
+   public int SupplierId { get; set; }
+   public Supplier Supplier { get; set; }
+
+   // One Product can appear in many OrderItems (1-to-M)
+   public ICollection<OrderItem> OrderItems { get; set; }
+}
+
+
+---------------Register by role ---------------------------
+
+
+private async Task<IActionResult> RegisterByRole(RegisterDto model, string role)
+    {
+        if (!ModelState.IsValid)
+        {
+            return ValidationProblem(ModelState);
+        }
+
+        var existingUser = await _userManager.FindByEmailAsync(model.Email);
+        if (existingUser != null)
+        {
+            return Conflict(new { message = "User with this email already exists." });
+        }
+
+        // Start transaction
+        await using var tx = await _context.Database.BeginTransactionAsync();
+
+        try
+        {
+            var user = new IdentityUser
+            {
+                UserName = model.Email,
+                Email = model.Email
+            };
+
+            //Create user
+            var createResult = await _userManager.CreateAsync(user, model.Password);
+
+            if (!createResult.Succeeded)
+            {
+                await tx.RollbackAsync(); // rollback everything
+                return BadRequest(new
+                {
+                    message = "Registration failed.",
+                    errors = createResult.Errors.Select(e => e.Description)
+                });
+            }
+
+            // Assign role
+            var roleResult = await _userManager.AddToRoleAsync(user, role);
+
+            if (!roleResult.Succeeded)
+            {
+                await tx.RollbackAsync(); // rollback user creation also
+                return BadRequest(new
+                {
+                    message = "Role assignment failed.",
+                    errors = roleResult.Errors.Select(e => e.Description)
+                });
+            }
+
+            //  Commit (final save)
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                message = $"{role} registered successfully.",
+                userId = user.Id,
+                email = user.Email,
+                role
+            });
+        }
+        catch (Exception ex)
+        {
+            // If any unexpected error happens
+            await tx.RollbackAsync();
+
+            return StatusCode(500, new
+            {
+                message = "Something went wrong.",
+                error = ex.Message
+            });
+        }

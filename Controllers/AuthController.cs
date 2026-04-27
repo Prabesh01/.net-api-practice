@@ -85,7 +85,7 @@ public class AuthController : ControllerBase
         });
     }
 
-    private async Task<IActionResult> RegisterByRole(RegisterDto model, string role)
+private async Task<IActionResult> RegisterByRole(RegisterDto model, string role)
     {
         if (!ModelState.IsValid)
         {
@@ -98,40 +98,65 @@ public class AuthController : ControllerBase
             return Conflict(new { message = "User with this email already exists." });
         }
 
-        var user = new IdentityUser
-        {
-            UserName = model.Email,
-            Email = model.Email
-        };
+        // Start transaction
+        await using var tx = await _context.Database.BeginTransactionAsync();
 
-        var createResult = await _userManager.CreateAsync(user, model.Password);
-        if (!createResult.Succeeded)
+        try
         {
-            return BadRequest(new
+            var user = new IdentityUser
             {
-                message = "Registration failed.",
-                errors = createResult.Errors.Select(e => e.Description)
+                UserName = model.Email,
+                Email = model.Email
+            };
+
+            //Create user
+            var createResult = await _userManager.CreateAsync(user, model.Password);
+
+            if (!createResult.Succeeded)
+            {
+                await tx.RollbackAsync(); // rollback everything
+                return BadRequest(new
+                {
+                    message = "Registration failed.",
+                    errors = createResult.Errors.Select(e => e.Description)
+                });
+            }
+
+            // Assign role
+            var roleResult = await _userManager.AddToRoleAsync(user, role);
+
+            if (!roleResult.Succeeded)
+            {
+                await tx.RollbackAsync(); // rollback user creation also
+                return BadRequest(new
+                {
+                    message = "Role assignment failed.",
+                    errors = roleResult.Errors.Select(e => e.Description)
+                });
+            }
+
+            //  Commit (final save)
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                message = $"{role} registered successfully.",
+                userId = user.Id,
+                email = user.Email,
+                role
             });
         }
-
-        var roleResult = await _userManager.AddToRoleAsync(user, role);
-        if (!roleResult.Succeeded)
+        catch (Exception ex)
         {
-            await _userManager.DeleteAsync(user);
-            return BadRequest(new
+            // If any unexpected error happens
+            await tx.RollbackAsync();
+
+            return StatusCode(500, new
             {
-                message = "Role assignment failed.",
-                errors = roleResult.Errors.Select(e => e.Description)
+                message = "Something went wrong.",
+                error = ex.Message
             });
         }
-
-        return Ok(new
-        {
-            message = $"{role} registered successfully.",
-            userId = user.Id,
-            email = user.Email,
-            role
-        });
     }
 
     private string GenerateJwtToken(IdentityUser user, IEnumerable<string> roles, DateTime expiryDateUtc)
